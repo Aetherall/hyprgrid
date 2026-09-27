@@ -16,7 +16,9 @@
 --     to. Heading along an axis, the swipe keeps to it (the rail).
 --   * Mouse: SUPER + middle-drag moves the view, the content following the
 --     mouse; letting go lands on the cell the flick would coast to.
---   * Overview: zoomed out, the wheel moves the view a workspace per notch.
+--   * Overview: four fingers up zoom out to it, following the fingers, and
+--     down back in. Zoomed out, the swipe's fingers pan the grid, and the
+--     wheel moves the view a workspace per notch.
 --   * Layout: "compact" keeps the grid in one piece: when a workspace is cut
 --     off (created alone, or the one linking it to the others went), the
 --     smaller part slides until it touches the rest.
@@ -72,6 +74,13 @@ local DEFAULTS = {
 		wheel = true,
 		step = 0.1,
 		idle = 80,
+		-- `fingers` swiped up zoom out to the overview (down: back in),
+		-- following them over `distance` of travel; lifting past half way, or
+		-- on a flick, goes the rest of the way. Zoomed out, gesture.fingers pan
+		-- the grid (a cell per `distance`) and land on the workspace the flick
+		-- coasts to; lifting a finger while zooming switches to panning, and
+		-- lifting them all then zooms back in there. false: none.
+		touchpad = { fingers = 4, distance = 300 },
 	},
 	hooks = {},
 }
@@ -647,7 +656,7 @@ end
 -- The overview's wheel: a rule while zoomed out, with no modifier (SUPER +
 -- wheel stays the zoom). Its other options are config values
 -- (plugin:hyprgrid:overview:*): set through hl.config.
-local POLICY = { wheel = true, step = true, idle = true }
+local POLICY = { wheel = true, step = true, idle = true, touchpad = true }
 
 local function register_overview()
 	local o = opts.overview
@@ -662,7 +671,30 @@ local function register_overview()
 	end
 
 	local g = grid()
-	if not (g and g.rule) or not o.wheel then
+	if not (g and g.rule) then
+		return
+	end
+	local tp = o.touchpad
+	local swipe = opts.gesture and opts.gesture.fingers or 3
+	if tp and tp.fingers == swipe then
+		error("hyprgrid: gesture.fingers and overview.touchpad.fingers are both " .. swipe .. "; the overview's rule would take every such swipe")
+	end
+	if tp then
+		g.rule({
+			when = { fingers = tp.fingers },
+			drive = { motion_y = { target = "zoom", gain = tp.distance } },
+			release = { zoom = "flick" },
+		})
+		g.rule({
+			when = { fingers = swipe, zoomed = true },
+			drive = { motion = { target = "position", gain = tp.distance } },
+			release = { position = "flick", zoom = 0 },
+			on_enter = function(_, id, dx, dy)
+				M.enter(id, dx, dy)
+			end,
+		})
+	end
+	if not o.wheel then
 		return
 	end
 	local scroll = { target = "position", step = o.step }

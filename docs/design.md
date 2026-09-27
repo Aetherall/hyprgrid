@@ -1,6 +1,6 @@
 # Design: one view, composable gestures
 
-Status: implemented, but for touchpad fingers (plan step 4). It replaced a
+Status: implemented, but for `on_step` (plan step 4). It replaced a
 split where hyprgrid owned a camera, a separate hyprgrid-overview plugin its
 own zoom and pan, and each input (trackpad swipe, wheel, keys) reached them
 by its own path.
@@ -79,8 +79,8 @@ cancel the events a session consumes.
 
 ## Lua gesture API
 
-Status: implemented; the parts marked (step 4) are specified so the shape
-holds, and come with the trackpad.
+Status: implemented; the part marked (step 4), `on_step`, is specified so
+the shape holds, and comes with the default swipe rebuilt as rules.
 
 ### Rules
 
@@ -114,7 +114,7 @@ and the config declares them again.
 | --- | --- |
 | `mod` | modifiers, as in binds: `"SUPER"`, `"SUPER + SHIFT"` |
 | `button` | `"left"`, `"right"`, `"middle"` or a Linux button code |
-| `fingers` (step 4) | touchpad fingers, 3 or more (fewer are scrolling) |
+| `fingers` | touchpad fingers, 3 to 5 (fewer are scrolling) |
 | `zoomed` | `true`: only while the view under the cursor is zoomed out (the overview); `false`: only zoomed in |
 
 Keys in `when` must match exactly for as long as the rule is active; keys
@@ -136,7 +136,8 @@ wheel bind). Input the matching rules don't drive passes through.
 
 `drive = { motion = "position" }` is shorthand for
 `drive = { motion = { target = "position" } }`. The inputs: `motion`
-(pointer, or fingers in step 4), `motion_x` / `motion_y` (one axis),
+(the pointer, or for a rule on `fingers` the fingers: each drives only its
+own kind of rule), `motion_x` / `motion_y` (one axis),
 `wheel`, `wheel_x` (the wheel tilted sideways). The targets: `position` (where the view is on the grid,
 in cells) and `zoom` (0 normal, 1 overview).
 
@@ -170,14 +171,19 @@ everything back where it started.
 
 ### Examples
 
-Trackpad (step 4): four fingers zoom, three pan; letting go from panning
-lands on the flick's workspace and zooms back in.
+Trackpad: four fingers zoom, three pan while zoomed out; letting go from
+panning lands on the flick's workspace, and zooms back in if the session
+zoomed (`setup()`'s `overview.touchpad`, which also keeps three fingers
+zoomed in for the default swipe).
 
 ```lua
 local g = hl.plugin.hyprgrid
-g.rule({ when = { fingers = 3 }, drive = { motion = "position" }, release = { position = "flick", zoom = 0 } })
-g.rule({ when = { fingers = 4 }, drive = { motion_y = { target = "zoom", gain = 300 } } })
+g.rule({ when = { fingers = 4 }, drive = { motion_y = { target = "zoom", gain = 300 } }, release = { zoom = "flick" } })
+g.rule({ when = { fingers = 3, zoomed = true }, drive = { motion = { target = "position", gain = 300 } }, release = { position = "flick", zoom = 0 } })
 ```
+
+A swipe a rule takes at its begin is the session's whole: Hyprland's
+`hl.gesture`s and the app see none of it.
 
 Mouse: SUPER + middle-drag pans, scrolling meanwhile zooms, and
 SUPER + wheel alone zooms in and out.
@@ -320,17 +326,25 @@ whole grid, and it has no links.
 3. Done: the zoom target; the overview renders the view. SUPER + wheel
    zooms; zoomed out, the wheel is a rule too (`zoomed`, `wheel_x`,
    `release.position = "direction"`).
-4. Trackpad adapter: `fingers` rules, finger count changes within one
-   session, the default swipe rebuilt as rules with `on_step`. Needs a
-   machine with a trackpad.
+4. Done: the trackpad adapter, `fingers` rules, finger count changes
+   within one session, the overview's touchpad rules in `setup()`. Still to
+   do: the default swipe rebuilt as rules with `on_step` (it is an
+   `hl.gesture` for now, on the fingers no rule takes).
 5. Done: the old paths removed (`pan`/`pan_end`, the overview's own
    gestures, pan and wheel code), the READMEs rewritten.
 
+### Lessons from implementing step 4
+
+- **A finger count change is a cancelled swipe.** libinput
+  (`evdev-mt-touchpad-gestures.c`) debounces a new finger count for 100 ms,
+  then ends the swipe cancelled and begins another only once the new
+  fingers move; lifting every finger ends it normally. So a cancelled end
+  holds the session: the next begin carries it on with its count, and it
+  ends as a release if none comes within 300 ms or the pointer moves (one
+  finger left).
+
 ## Open questions
 
-- libinput probably ends a swipe when a finger lifts and starts a new one
-  with the new count; the trackpad adapter would join them into one session.
-  Unverified until step 4.
 - Seams for three or more monitors (regions handle two).
 - `Kinetics.hpp` opens a private part of hyprutils (`#define private public`);
   a hyprutils change can break it.

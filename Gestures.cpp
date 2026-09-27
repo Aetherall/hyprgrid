@@ -1,5 +1,5 @@
 // The gesture engine (Gesture.hpp) on Hyprland: mouse buttons, pointer motion,
-// the wheel and modifiers from the event bus go into the engine, and what it
+// the wheel, touchpad swipes and modifiers from the event bus go into the engine, and what it
 // drives goes to the view (View.hpp): its position, held on its first move,
 // and its zoom. Registers hl.plugin.hyprgrid.rule(), whose
 // fields are in docs/design.md.
@@ -9,6 +9,9 @@
 // With a rule holding the cursor, the cursor is hidden (cursor:invisible, for
 // the session) and warped back to where it was after every move, so motion
 // never stops at a screen edge.
+//
+// A swipe whose begin a rule takes is taken whole (updates, end): neither
+// Hyprland's gestures (hl.gesture) nor the app see it.
 //
 // Hyprland rebuilds its Lua state on every config reload, so the rules (and
 // the Lua references of their hooks) are dropped on config.preReload and the
@@ -177,6 +180,7 @@ namespace {
     SP<CEventLoopTimer> g_idle;
 
     CHyprSignalListener g_buttonListener, g_moveListener, g_axisListener, g_keyListener, g_reloadListener;
+    CHyprSignalListener g_swipeBeginListener, g_swipeUpdateListener, g_swipeEndListener;
 
     void CTargets::move(eTarget target, const SPoint& delta, uint32_t timeMs) {
         const auto MON = m_monitor.lock();
@@ -255,9 +259,15 @@ namespace {
         armIdle();
     }
 
+    void fingersLifted(uint32_t timeMs);
+    bool fingersChanging();
+
     void onMove(Event::SCallbackInfo& info) {
         if (g_warping)
             return;
+        // One finger moving the pointer: the swipe's are gone.
+        if (fingersChanging())
+            fingersLifted(nowMs());
         const auto POS   = Pointer::mgr()->position();
         const auto FROM  = g_targets.holding() ? g_targets.anchor() : g_lastPos;
         const auto DELTA = POS - FROM;
@@ -288,6 +298,67 @@ namespace {
         if (g_engine.wheel(NOTCHES, modsNow(), e.timeMs, INPUT))
             info.cancelled = true;
         armIdle();
+    }
+
+    // --- The touchpad ---
+    //
+    // libinput ends a swipe normally when every finger is lifted. When the
+    // finger count changes, it waits 100 ms, ends the swipe cancelled, and
+    // begins another with the new count once the fingers move. So a
+    // cancelled end holds the session: the next begin carries it on with its
+    // count (4 fingers zooming, 3 panning), and without one within
+    // FINGER_CHANGE_MS the fingers count as lifted then.
+    constexpr uint32_t FINGER_CHANGE_MS = 300;
+
+    bool                g_swipeTaken = false; // a rule took this swipe's begin
+    SP<CEventLoopTimer> g_fingerChange;       // armed by a cancelled end
+    uint32_t            g_fingerChangeMs = 0; // ...at its time
+    bool                g_changing       = false; // between a cancelled end and the next begin
+
+    bool fingersChanging() {
+        return g_changing;
+    }
+
+    void fingersLifted(uint32_t timeMs) {
+        g_changing = false;
+        if (g_fingerChange)
+            g_fingerChange->updateTimeout(std::nullopt);
+        g_engine.fingers(0, modsNow(), timeMs);
+        armIdle();
+    }
+
+    void onSwipeBegin(const IPointer::SSwipeBeginEvent& e, Event::SCallbackInfo& info) {
+        if (info.cancelled)
+            return;
+        g_changing = false;
+        if (g_fingerChange)
+            g_fingerChange->updateTimeout(std::nullopt);
+        g_swipeTaken = g_engine.fingers(int(e.fingers), modsNow(), e.timeMs);
+        if (g_swipeTaken)
+            info.cancelled = true;
+        armIdle();
+    }
+
+    void onSwipeUpdate(const IPointer::SSwipeUpdateEvent& e, Event::SCallbackInfo& info) {
+        if (!g_swipeTaken || info.cancelled)
+            return;
+        g_engine.motion({e.delta.x, e.delta.y}, modsNow(), e.timeMs, true);
+        info.cancelled = true; // even once the session is over: the swipe was taken
+        armIdle();
+    }
+
+    void onSwipeEnd(const IPointer::SSwipeEndEvent& e, Event::SCallbackInfo& info) {
+        if (!g_swipeTaken || info.cancelled)
+            return;
+        g_swipeTaken   = false;
+        info.cancelled = true;
+        if (!e.cancelled || !g_engine.onFingers() || !g_fingerChange) {
+            fingersLifted(e.timeMs);
+            return;
+        }
+        g_changing       = true;
+        g_fingerChangeMs = e.timeMs;
+        g_fingerChange->updateTimeout(std::chrono::milliseconds(FINGER_CHANGE_MS));
     }
 
     // --- hl.plugin.hyprgrid.rule() ---
@@ -353,8 +424,10 @@ namespace {
             }
             lua_pop(L, 1);
             lua_getfield(L, -1, "fingers");
-            if (err.empty() && !lua_isnil(L, -1))
-                err = "fingers: touchpad rules are not supported yet";
+            if (err.empty() && lua_isinteger(L, -1) && lua_tointeger(L, -1) >= 3 && lua_tointeger(L, -1) <= 5)
+                keys.fingers = int(lua_tointeger(L, -1));
+            else if (err.empty() && !lua_isnil(L, -1))
+                err = "fingers: expected 3, 4 or 5 (fewer are scrolling)";
             lua_pop(L, 1);
             lua_getfield(L, -1, "zoomed");
             if (err.empty() && lua_isboolean(L, -1))
@@ -539,6 +612,8 @@ void Gestures::init(void* handle) {
         },
         nullptr);
     g_pEventLoopManager->addTimer(g_idle);
+    g_fingerChange = makeShared<CEventLoopTimer>(std::nullopt, [](SP<CEventLoopTimer>, void*) { fingersLifted(g_fingerChangeMs); }, nullptr);
+    g_pEventLoopManager->addTimer(g_fingerChange);
 
     g_lastPos        = Pointer::mgr()->position();
     g_buttonListener = Event::bus()->m_events.input.mouse.button.listen([](IPointer::SButtonEvent e, Event::SCallbackInfo& info) { onButton(e, info); });
@@ -551,6 +626,9 @@ void Gestures::init(void* handle) {
             armIdle();
         });
     });
+    g_swipeBeginListener  = Event::bus()->m_events.gesture.swipe.begin.listen([](IPointer::SSwipeBeginEvent e, Event::SCallbackInfo& info) { onSwipeBegin(e, info); });
+    g_swipeUpdateListener = Event::bus()->m_events.gesture.swipe.update.listen([](IPointer::SSwipeUpdateEvent e, Event::SCallbackInfo& info) { onSwipeUpdate(e, info); });
+    g_swipeEndListener    = Event::bus()->m_events.gesture.swipe.end.listen([](IPointer::SSwipeEndEvent e, Event::SCallbackInfo& info) { onSwipeEnd(e, info); });
     g_reloadListener = Event::bus()->m_events.config.preReload.listen([] {
         g_engine.clear(nowMs());
         armIdle();
@@ -563,9 +641,14 @@ void Gestures::exit() {
     g_axisListener.reset();
     g_keyListener.reset();
     g_reloadListener.reset();
+    g_swipeBeginListener.reset();
+    g_swipeUpdateListener.reset();
+    g_swipeEndListener.reset();
     g_engine.clear(nowMs());
-    if (g_idle) {
-        g_pEventLoopManager->removeTimer(g_idle);
-        g_idle.reset();
+    for (auto* timer : {&g_idle, &g_fingerChange}) {
+        if (*timer) {
+            g_pEventLoopManager->removeTimer(*timer);
+            timer->reset();
+        }
     }
 }

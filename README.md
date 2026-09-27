@@ -80,6 +80,8 @@ Hyprland 0.56.
 | `SUPER + ALT` + `hjkl` | Move the whole workspace one cell, swapping with the one there. You stay on it. |
 | 3-finger swipe, any direction | Walk focus across the windows; past the last one, drag the next screen in, on both axes. Let go and the camera lands where the flick would coast to. |
 | `SUPER` + middle-drag | Drag the grid, the content following the mouse; the cursor hides and the drag never hits the screen edge. Let go and it lands where the flick would coast to. `SUPER` is only needed to start. |
+| 4-finger swipe up / down | Zoom out to the overview / back in, following the fingers. Past half way, or a flick, goes the rest of the way. |
+| 3-finger swipe, in the overview | Pan the grid; let go and it lands on the workspace the flick coasts to. Lift a finger while zooming out to pan in the same gesture; letting go then zooms back in there. |
 | Wheel, in the overview | The next workspace that way, per notch; tilted: sideways. |
 
 The swipe follows the content, like a phone: fingers up walks focus down and
@@ -96,9 +98,13 @@ out keeps its default:
 
 ```lua
 hl.plugin.hyprgrid.setup({
-    gesture = { fingers = 4 },
+    gesture = { fingers = 4 },               -- the swipe on four fingers...
+    overview = { touchpad = { fingers = 3 } }, -- ...and the overview on three
 })
 ```
+
+The swipe and the overview's zoom can't share a finger count: `setup()`
+raises an error if they do.
 
 The full set, with the defaults:
 
@@ -127,6 +133,8 @@ hl.plugin.hyprgrid.setup({
         wheel = true,    -- zoomed out, the wheel steps a workspace per notch
         step = 0.1,      -- cells a notch moves before the view glides on
         idle = 80,       -- ms after the last notch before it does
+        touchpad = { fingers = 4, distance = 300 },
+                         -- fingers zooming, travel per full zoom (and per cell panning); false: none
         -- and the overview's own options (scale, wallpaper, blur, ...):
         -- see overview/README.md
     },
@@ -279,7 +287,8 @@ hl.plugin.hyprgrid.rule({
 ```
 
 The input a rule takes goes no further (not to the app, not to your binds).
-The fields, and the part still to come (touchpad fingers), are in
+Rules on touchpad `fingers` work the same way. The fields, and the part
+still to come (`on_step`), are in
 [docs/design.md](docs/design.md). A rule can drive the zoom too
 (`drive = { wheel = "zoom" }`: zoomed all the way out, that is the overview).
 

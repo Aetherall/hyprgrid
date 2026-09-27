@@ -22,8 +22,10 @@ one; it no longer follows upstream (see [Where it came from](#where-it-came-from
 ## Opening it
 
 The overview is the view's zoom (0 normal, 1 zoomed out), per monitor: any
-rule driving the zoom opens it. hyprgrid's default policy has none; these are
-the ones in its design notes:
+rule driving the zoom opens it. hyprgrid's default policy has the touchpad
+ones: four fingers up zoom out, following the fingers, and down zoom back in
+(`overview.touchpad` in `setup()`). Zoomed out, three fingers pan the grid.
+For the mouse, these are the ones in its design notes:
 
 ```lua
 local g = hl.plugin.hyprgrid

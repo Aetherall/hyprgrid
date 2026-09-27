@@ -380,7 +380,59 @@ static void testZoomedKey() {
     CHECK(!e.wheel(1, 0, 1020, eInput::WHEEL_X));
 }
 
+// The trackpad: four fingers zoom, three pan while zoomed out.
+static void testFingers() {
+    SFake   t;
+    CEngine e(t);
+    SRule   zoom;
+    zoom.when.fingers = 4;
+    zoom.drive        = {{.input = eInput::MOTION_Y, .target = eTarget::ZOOM, .gain = 300}};
+    zoom.zoom         = {eSettle::FLICK};
+    SRule pan;
+    pan.when.fingers = 3;
+    pan.when.zoomed  = true;
+    pan.drive        = {{.input = eInput::MOTION, .target = eTarget::POSITION, .gain = 300}};
+    pan.zoom         = {eSettle::VALUE, 0};
+    SRule mouse      = ::pan(std::nullopt, std::nullopt);
+    e.add(zoom);
+    e.add(pan);
+    e.add(mouse);
+
+    // Three fingers zoomed in: no rule, the swipe goes on to Hyprland.
+    CHECK(!e.fingers(3, 0, 0));
+    CHECK(!e.motion({0, -30}, 0, 10, true) && !e.active());
+    CHECK(!e.fingers(0, 0, 20));
+
+    // Four: taken, and fingers up zoom out.
+    CHECK(e.fingers(4, 0, 100));
+    CHECK(e.motion({0, -150}, 0, 110, true));
+    CHECK(near(t.zoom.x, 0.5) && near(t.moved.x, 0) && near(t.moved.y, 0));
+    // The pointer doesn't drive a touchpad rule.
+    CHECK(!e.motion({50, 0}, 0, 115));
+    CHECK(near(t.moved.x, 0) && near(t.zoom.x, 0.5));
+
+    // A finger lifted: the same session, now panning.
+    t.inOverview = true;
+    CHECK(e.fingers(3, 0, 200));
+    CHECK(e.onFingers() && e.active()->when.fingers == 3 && t.begins == 1 && t.ends == 0);
+    CHECK(e.motion({-300, 0}, 0, 210, true));
+    CHECK(near(t.moved.x, 1) && near(t.zoom.x, 0.5));
+
+    // Lifted: it settles as the panning rule says, both targets.
+    CHECK(!e.fingers(0, 0, 300));
+    CHECK(!e.active() && t.ends == 1 && t.touched.zoom && t.touched.position);
+    CHECK(t.endedPosition.kind == eSettle::FLICK);
+
+    // Finger motion doesn't drive a pointer rule.
+    CHECK(e.button(MIDDLE, true, 0, 400));
+    CHECK(!e.motion({10, 0}, 0, 410, true));
+    CHECK(e.active() && !e.onFingers() && near(t.moved.x, 1));
+    CHECK(e.button(MIDDLE, false, 0, 420));
+    CHECK(!e.active());
+}
+
 int main() {
+    testFingers();
     testStartNeedsStartKeys();
     testWhenKeysMustStayHeld();
     testMostKeysWinThenFirstDeclared();

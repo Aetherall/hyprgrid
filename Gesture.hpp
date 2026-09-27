@@ -113,6 +113,11 @@ namespace Gesture {
             return when.button || when.fingers || start.button || start.fingers;
         }
 
+        // A touchpad rule: its motion is the fingers'.
+        bool onFingers() const {
+            return when.fingers || start.fingers;
+        }
+
         bool drives(eInput input) const {
             return std::ranges::any_of(drive, [&](const SDrive& d) { return d.input == input; });
         }
@@ -201,13 +206,34 @@ namespace Gesture {
                 update(timeMs, std::nullopt);
         }
 
-        bool motion(const SPoint& deltaPx, uint32_t mods, uint32_t timeMs) {
+        // Fingers on the touchpad (0: none; fewer than 3 are scrolling, not a
+        // swipe). Returns whether a session runs on a rule holding fingers:
+        // it then takes the swipe.
+        bool fingers(int count, uint32_t mods, uint32_t timeMs) {
+            SBusy busy(*this, timeMs);
+            m_held.mods    = mods;
+            m_held.fingers = count;
+            if (!busy.nested())
+                update(timeMs, std::nullopt);
+            return onFingers();
+        }
+
+        // A session runs on a rule holding fingers.
+        bool onFingers() const {
+            return m_active && active()->onFingers();
+        }
+
+        // Pointer motion, or with `fromFingers` the fingers' on the touchpad.
+        // Each drives only its own kind of rule: finger motion rules holding
+        // fingers, pointer motion the others. Finger motion enters no rule
+        // (fingers() does); pointer motion can enter one on modifiers only.
+        bool motion(const SPoint& deltaPx, uint32_t mods, uint32_t timeMs, bool fromFingers = false) {
             SBusy busy(*this, timeMs);
             if (busy.nested())
                 return false;
             m_held.mods = mods;
-            update(timeMs, eInput::MOTION);
-            if (!m_active || !active()->drivesMotion())
+            update(timeMs, fromFingers ? std::nullopt : std::optional{eInput::MOTION});
+            if (!m_active || !active()->drivesMotion() || active()->onFingers() != fromFingers)
                 return false;
             m_lastDriven = timeMs;
             for (const auto& d : active()->drive) {

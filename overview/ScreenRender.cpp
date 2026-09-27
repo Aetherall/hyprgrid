@@ -491,19 +491,20 @@ namespace Overview {
         }
     }
 
-    // The seam between the two monitors' regions, across the whole screen.
+    // Boundaries between monitor regions, across the whole screen.
     void CScreen::renderSeam(float scale_) {
         const auto MONITOR = monitor.lock();
-        const auto SEAM    = TopologyConfig::seam();
         const auto ORIGIN  = Grid::cellOf(startedOn);
-        if (!MONITOR || !SEAM || !ORIGIN)
+        if (!MONITOR || !ORIGIN)
             return;
         auto camera   = sceneCamera(MONITOR, scale_, viewOffset->value());
         camera.origin = *ORIGIN;
-        CRectPassElement::SRectData data;
-        data.box   = toCBox(Scene::seamLine(camera, *SEAM, std::max(2.0, std::round(3.0 * MONITOR->m_scale))), false);
-        data.color = CHyprColor{1.0, 1.0, 1.0, 0.55};
-        g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(data));
+        for (const auto& seam : TopologyConfig::seams()) {
+            CRectPassElement::SRectData data;
+            data.box   = toCBox(Scene::seamLine(camera, seam, std::max(2.0, std::round(3.0 * MONITOR->m_scale))), false);
+            data.color = CHyprColor{1.0, 1.0, 1.0, 0.55};
+            g_pHyprRenderer->m_renderPass.add(makeUnique<CRectPassElement>(data));
+        }
     }
 
     // --- A frame ---

@@ -87,6 +87,23 @@ static void testRegions() {
     CHECK((nearSeam(SIDE, false, 3) == SCell{-1, 3}) && (nearSeam(SIDE, true, 3) == SCell{0, 3}));
     CHECK((nearSeam(STACK, false, 2) == SCell{2, -1}) && (nearSeam(STACK, true, 2) == SCell{2, 0}));
     CHECK(alongSeam(SIDE, {7, 4}) == 4 && alongSeam(STACK, {7, 4}) == 7);
+
+    // Three side-by-side monitors share a board without sharing a region.
+    const auto SEAMS = stripeSeams(3, true);
+    CHECK(SEAMS.size() == 2 && SEAMS[0].vertical && SEAMS[0].at == 0 && SEAMS[1].at == 1);
+    CHECK(stripeOwner({-3, 5}, true, 3) == 0);
+    CHECK(stripeOwner({0, 5}, true, 3) == 1);
+    CHECK(stripeOwner({1, 5}, true, 3) == 2);
+    CHECK((stripeStart(0, true, 5) == SCell{-1, 5}));
+    CHECK((stripeStart(1, true, 5) == SCell{0, 5}));
+    CHECK((stripeStart(2, true, 5) == SCell{1, 5}));
+
+    CHECK(stripeOwner({4, -2}, false, 3) == 0);
+    CHECK(stripeOwner({4, 0}, false, 3) == 1);
+    CHECK(stripeOwner({4, 1}, false, 3) == 2);
+    CHECK((stripeStart(2, false, 4) == SCell{4, 1}));
+    CHECK(stripeSeams(1, true).empty());
+    CHECK(stripeOwner({-1, 2}, true, 2) == 0 && stripeOwner({0, 2}, true, 2) == 1);
 }
 
 int main() {

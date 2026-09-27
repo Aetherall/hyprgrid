@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace TopologyConfig {
     void init(void* handle);
@@ -28,6 +29,6 @@ namespace TopologyConfig {
     // What a (dx, dy) step from `monitor`'s active workspace reaches.
     SStep step(const PHLMONITOR& monitor, const Motion::SCell& d);
 
-    // With regions on two monitors, where the seam between them runs.
-    std::optional<Topology::SSeam> seam();
+    // Boundaries between the monitors' regions in the shared grid.
+    std::vector<Topology::SSeam> seams();
 }

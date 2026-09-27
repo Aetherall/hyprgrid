@@ -292,12 +292,12 @@ still to come (`on_step`), are in
 [docs/design.md](docs/design.md). A rule can drive the zoom too
 (`drive = { wheel = "zoom" }`: zoomed all the way out, that is the overview).
 
-With two monitors, they share one grid by default, split into a region
-each along a seam that follows their physical layout: each region grows
-everywhere but across the seam, and from the cell next to the seam, focus
-(or a carried window, or a moved workspace) crosses to the other monitor's
-current workspace. The overview shows the whole grid from each monitor,
-with the seam and a frame over each monitor's workspace.
+With multiple monitors, they share one grid by default, split into a region
+each along their widest physical axis: each region grows everywhere but
+across its seams, and from a cell next to a seam, focus (or a carried window,
+or a moved workspace) crosses to the neighbouring monitor's current
+workspace. The overview shows the whole grid from each monitor, with the
+seams and a frame over each monitor's workspace.
 `topology()` changes that, and `step(dx, dy)` answers where a move leads
 (`"workspace"`, `"new"`, `"monitor"` or `"none"`), for your own actions:
 

@@ -41,6 +41,11 @@ namespace Overview {
             forcedWindows.push_back({window, window->isHidden()});
         window->setHidden(false);
         window->presentation().alpha(Desktop::View::WINDOW_ALPHA_FULLSCREEN)->setValueAndWarp(1.F);
+        // Its workspace opaque, as the overview made every workspace on
+        // opening: one created since (a window dropped in an empty cell)
+        // starts transparent, Hyprland fading it in when it's switched to.
+        if (const auto& WORKSPACE = window->m_workspace; WORKSPACE && WORKSPACE->m_alpha && (WORKSPACE->m_alpha->value() != 1.F || WORKSPACE->m_alpha->goal() != 1.F))
+            WORKSPACE->m_alpha->setValueAndWarp(1.F);
     }
 
     void CScreen::forceLayersAboveFullscreen() {

@@ -13,6 +13,7 @@
 --     the screen next door -- the same rule on both axes, following the
 --     content: fingers up walks focus DOWN and pulls the screen below in.
 --     Lifting the fingers lands iOS-style on the cell the flick would coast
+--     to. Heading along an axis, the swipe keeps to it (the rail).
 --   * Mouse: SUPER + middle-drag moves the view, the content following the
 --     mouse; letting go lands on the cell the flick would coast to.
 --   * Overview: zoomed out, the wheel moves the view a workspace per notch.
@@ -34,6 +35,12 @@ local DEFAULTS = {
 		-- the camera starts. A switch lands ~step/2 - hysteresis before the
 		-- centre, so this is ~150 of drag after the switch before the screen moves.
 		hold = 130,
+		-- Keep a swipe on its axis while it's heading along it: moving within
+		-- `angle` degrees of an axis (judged over the last `radius` of travel),
+		-- sideways drift shows only `give` of itself. Heading off it lets go,
+		-- and the screen catches up with a turn over about `catchup` of travel.
+		-- false: no rail.
+		rail = { radius = 20, angle = 20, give = 0.15, catchup = 20 },
 	},
 	keys = {
 		focus = { mod = "SUPER", left = { "left", "h" }, right = { "right", "l" }, up = { "up", "k" }, down = { "down", "j" } },
@@ -43,11 +50,11 @@ local DEFAULTS = {
 	-- Reject tucking or landing a window once it would be squashed past this
 	-- aspect (w/h or h/w).
 	max_aspect = 3,
-	-- A rule (hl.plugin.hyprgrid.rule()) for dragging the view with the mouse:
-	-- `button` held, `start_mod` to start (`mod` instead: held throughout).
 	-- How the grid keeps its shape (M.layouts, or your own function of the
 	-- workspaces, see hl.plugin.hyprgrid.layout()); false: leave it alone.
 	layout = "compact",
+	-- A rule (hl.plugin.hyprgrid.rule()) for dragging the view with the mouse:
+	-- `button` held, `start_mod` to start (`mod` instead: held throughout).
 	mouse = {
 		button = "middle",
 		start_mod = "SUPER",
@@ -325,6 +332,86 @@ end
 -- has windows the way you're going. One screen is
 -- gestures:workspace_swipe_distance of travel.
 
+-- The rail. Throughout a swipe, the heading is the direction of the fingers'
+-- recent travel (an average fading over `radius`). After the first `radius`
+-- of travel, a heading within `angle` of an axis puts the swipe on that axis's
+-- rail, where sideways travel shows only `give` of itself; heading off it
+-- (with a few degrees of hysteresis) lets go, and back on it takes hold
+-- again, so the rail only ever acts on a swipe going along it, and a pan can
+-- turn from one axis to the next as often as it likes. What the rail held
+-- back is remembered only over the last `radius` of travel: old drift is
+-- forgotten, and the travel held back during a turn is paid back over about
+-- `catchup` of travel once the heading has swung round.
+local RAIL_HYSTERESIS = 5 -- degrees past `angle` before a held rail lets go
+
+local rail -- per-swipe state
+
+local function rail_reset()
+	rail = {
+		hx = 0, -- heading: recent travel, fading over `radius`
+		hy = 0,
+		travel = 0, -- total travel in this swipe
+		state = "judging", -- "judging" | "x" | "y" (on that rail) | "free"
+		owed_x = 0, -- recent finger travel the rail held back (fading over `radius`)
+		owed_y = 0,
+	}
+end
+
+-- How far (degrees) a heading is from its nearest axis, and that axis.
+local function off_axis(hx, hy)
+	local ax, ay = math.abs(hx), math.abs(hy)
+	if ax >= ay then
+		return ax > 0 and math.deg(math.atan(ay / ax)) or 0, "x"
+	end
+	return math.deg(math.atan(ax / ay)), "y"
+end
+
+-- Finger travel (dx, dy) -> the travel to act on.
+local function rail_filter(dx, dy)
+	local r = opts.gesture.rail
+	if not r then
+		return dx, dy
+	end
+	local len = math.sqrt(dx ^ 2 + dy ^ 2)
+	local fade = math.exp(-len / r.radius)
+	rail.hx, rail.hy = rail.hx * fade + dx, rail.hy * fade + dy
+	rail.travel = rail.travel + len
+	local angle, axis = off_axis(rail.hx, rail.hy)
+
+	if rail.state == "judging" then
+		if rail.travel >= r.radius then
+			rail.state = angle <= r.angle and axis or "free"
+		end
+	elseif rail.state == "free" then
+		if angle <= r.angle then
+			rail.state = axis
+		end
+	elseif axis ~= rail.state or angle > r.angle + RAIL_HYSTERESIS then
+		rail.state = "free"
+	end
+
+	local fx, fy = dx, dy
+	if rail.state == "x" then
+		fy = dy * r.give
+		rail.owed_y = rail.owed_y * fade + dy - fy
+	elseif rail.state == "y" then
+		fx = dx * r.give
+		rail.owed_x = rail.owed_x * fade + dx - fx
+	end
+	-- Pay back what's owed on the axes not held by the rail: after a turn,
+	-- the travel held back while the heading swung round.
+	local k = math.min(1, len / r.catchup)
+	if rail.state ~= "x" and rail.owed_y ~= 0 then
+		local pay = rail.owed_y * k
+		fy, rail.owed_y = fy + pay, rail.owed_y - pay
+	end
+	if rail.state ~= "y" and rail.owed_x ~= 0 then
+		local pay = rail.owed_x * k
+		fx, rail.owed_x = fx + pay, rail.owed_x - pay
+	end
+	return fx, fy
+end
+
 local sw -- per-gesture state
 local function sw_reset()
 	sw = {
@@ -344,6 +431,7 @@ local function sw_reset()
 		t = 0, -- time_ms of the event being handled
 		dist = 300, -- travel per screen
 	}
+	rail_reset()
 end
 
 local function vdir(v)
@@ -501,16 +589,24 @@ local function register_gesture()
 			update = function(e)
 				-- Content-following on both axes: (+x, +y) = toward the screen on the
 				-- right / below, which the fingers pull in by moving left / up.
-				local dx, dy = -e.delta.x, -e.delta.y
+				local dx, dy = rail_filter(-e.delta.x, -e.delta.y)
 				sw.t = e.time_ms or sw.t
 				if sw.mode == "camera" then
 					camera_move(dx, dy) -- every movement, both axes
 					return
 				end
+				-- Both axes, the one it's going along first; the other only while
+				-- still walking focus.
 				if math.abs(dx) > math.abs(dy) then
 					horizontal_focus(dx)
+					if sw.mode == "focus" and dy ~= 0 then
+						vertical_focus(dy)
+					end
 				else
 					vertical_focus(dy)
+					if sw.mode == "focus" and dx ~= 0 then
+						horizontal_focus(dx)
+					end
 				end
 			end,
 			finish = function(e)

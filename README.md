@@ -112,6 +112,8 @@ hl.plugin.hyprgrid.setup({
         damp = 0.25,     -- camera speed during `resist`, as a fraction of finger speed
         hysteresis = 6,  -- travel past the switch point before focus changes (stops flicker)
         hold = 130,      -- after walking focus, travel past the new window before the camera moves
+        rail = { radius = 20, angle = 20, give = 0.15, catchup = 20 },
+                         -- heading along an axis, sideways drift shows only `give` of itself; false: off
     },
     keys = { ... },      -- see below
     mouse = {

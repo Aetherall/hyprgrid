@@ -6,6 +6,7 @@
 
 #include "Motion.hpp"
 
+#include <algorithm>
 #include <functional>
 #include <optional>
 #include <string>
@@ -142,5 +143,26 @@ namespace Topology {
     // Where along the seam a cell is.
     inline int alongSeam(const SSeam& seam, const SCell& cell) {
         return seam.vertical ? cell.y : cell.x;
+    }
+
+    // Ordered monitors occupy adjacent stripes: the first extends to -inf,
+    // the last to +inf. Two monitors keep the original seam at zero.
+    inline size_t stripeOwner(const SCell& cell, bool vertical, size_t count) {
+        if (!count)
+            return 0;
+        const int ACROSS = vertical ? cell.x : cell.y;
+        return static_cast<size_t>(std::clamp(ACROSS + 1, 0, int(count) - 1));
+    }
+
+    inline SCell stripeStart(size_t index, bool vertical, int along) {
+        const int ACROSS = int(index) - 1;
+        return vertical ? SCell{ACROSS, along} : SCell{along, ACROSS};
+    }
+
+    inline std::vector<SSeam> stripeSeams(size_t count, bool vertical) {
+        std::vector<SSeam> seams;
+        for (size_t i = 1; i < count; ++i)
+            seams.push_back({vertical, int(i) - 1});
+        return seams;
     }
 }

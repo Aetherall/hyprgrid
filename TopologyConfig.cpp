@@ -39,6 +39,7 @@ extern "C" {
 #include <lua.h>
 }
 
+#include <algorithm>
 #include <map>
 #include <stdexcept>
 #include <vector>
@@ -125,39 +126,50 @@ namespace {
         return sc<int64_t>(*ws->numberedID());
     }
 
-    // --- Regions: one grid, split between (up to) two monitors by a seam ---
+    // --- Regions: one grid, a stripe per monitor ---
 
-    // The monitors sharing the grid by regions: one or two (more: a grid each,
-    // for now).
     std::vector<PHLMONITOR> regionMonitors() {
         if (g_config.boards != eBoards::REGIONS)
             return {};
-        const auto& MONITORS = State::monitorState()->monitors();
-        return MONITORS.size() <= 2 ? MONITORS : std::vector<PHLMONITOR>{};
+        std::vector<PHLMONITOR> monitors;
+        for (const auto& mon : State::monitorState()->monitors()) {
+            if (mon)
+                monitors.push_back(mon);
+        }
+        return monitors;
     }
 
-    // The seam, and the monitors either side of it (first: left / top).
-    struct SSplit {
-        Topology::SSeam seam;
-        PHLMONITOR      first, second;
-    };
-
-    std::optional<SSplit> split() {
-        const auto MONS = regionMonitors();
-        if (MONS.size() != 2)
-            return std::nullopt;
-        const auto  CA = MONS[0]->m_position + MONS[0]->m_size / 2.0, CB = MONS[1]->m_position + MONS[1]->m_size / 2.0;
-        bool        aFirst = true;
-        const auto  SEAM   = Topology::seamBetween(CB.x - CA.x, CB.y - CA.y, aFirst);
-        return SSplit{SEAM, aFirst ? MONS[0] : MONS[1], aFirst ? MONS[1] : MONS[0]};
+    // Use the axis on which the monitor centres are spread furthest. Sort
+    // by their physical positions so the grid follows the desktop layout.
+    bool regionVertical(const std::vector<PHLMONITOR>& mons) {
+        if (mons.size() < 2)
+            return true;
+        double minX = mons[0]->m_position.x + mons[0]->m_size.x / 2.0;
+        double maxX = minX, minY = mons[0]->m_position.y + mons[0]->m_size.y / 2.0, maxY = minY;
+        for (const auto& mon : mons) {
+            const auto C = mon->m_position + mon->m_size / 2.0;
+            minX = std::min(minX, C.x);
+            maxX = std::max(maxX, C.x);
+            minY = std::min(minY, C.y);
+            maxY = std::max(maxY, C.y);
+        }
+        return maxX - minX >= maxY - minY;
     }
 
-    // Who owns a cell: with one monitor, it; with two, the seam's side.
+    std::vector<PHLMONITOR> orderedRegions() {
+        auto mons = regionMonitors();
+        const bool VERTICAL = regionVertical(mons);
+        std::ranges::sort(mons, [VERTICAL](const PHLMONITOR& a, const PHLMONITOR& b) {
+            const auto CA = a->m_position + a->m_size / 2.0, CB = b->m_position + b->m_size / 2.0;
+            const double A = VERTICAL ? CA.x : CA.y, B = VERTICAL ? CB.x : CB.y;
+            return A == B ? a->m_name < b->m_name : A < B;
+        });
+        return mons;
+    }
+
     PHLMONITOR ownerOf(const Motion::SCell& cell) {
-        if (const auto S = split())
-            return Topology::inSecond(S->seam, cell) ? S->second : S->first;
-        const auto MONS = regionMonitors();
-        return MONS.empty() ? nullptr : MONS.front();
+        const auto MONS = orderedRegions();
+        return MONS.empty() ? nullptr : MONS[Topology::stripeOwner(cell, regionVertical(MONS), MONS.size())];
     }
 
     // Hand the grid the regions (or none), which places workspaces again.
@@ -170,13 +182,15 @@ namespace {
             .owner = ownerOf,
             .nearSeam =
                 [](const PHLMONITOR& mon, int along) {
-                    const auto S = split();
-                    return S ? Topology::nearSeam(S->seam, mon == S->second, along) : Motion::SCell{0, along};
+                    const auto MONS = orderedRegions();
+                    if (MONS.size() < 2)
+                        return Motion::SCell{0, along};
+                    const auto IT = std::ranges::find(MONS, mon);
+                    return Topology::stripeStart(IT == MONS.end() ? 0 : std::distance(MONS.begin(), IT), regionVertical(MONS), along);
                 },
             .along =
                 [](const Motion::SCell& cell) {
-                    const auto S = split();
-                    return S ? Topology::alongSeam(S->seam, cell) : cell.y;
+                    return regionVertical(regionMonitors()) ? cell.y : cell.x;
                 },
         });
     }
@@ -418,7 +432,7 @@ std::string TopologyConfig::boardOf(const PHLMONITOR& monitor) {
     if (!monitor)
         return {};
     switch (g_config.boards) {
-        case eBoards::REGIONS: return regionMonitors().empty() ? monitor->m_name : std::string{"grid"};
+        case eBoards::REGIONS: return "grid";
         case eBoards::SHARED: return "shared";
         case eBoards::GROUPS: {
             const auto IT = g_config.groupOf.find(monitor->m_name);
@@ -475,9 +489,9 @@ TopologyConfig::SStep TopologyConfig::step(const PHLMONITOR& monitor, const Moti
     }
 }
 
-std::optional<Topology::SSeam> TopologyConfig::seam() {
-    const auto S = split();
-    return S ? std::optional<Topology::SSeam>{S->seam} : std::nullopt;
+std::vector<Topology::SSeam> TopologyConfig::seams() {
+    const auto MONS = regionMonitors();
+    return Topology::stripeSeams(MONS.size(), regionVertical(MONS));
 }
 
 void TopologyConfig::init(void* handle) {

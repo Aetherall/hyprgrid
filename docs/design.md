@@ -275,25 +275,26 @@ config reload, like rules.
 ### Regions
 
 With `boards = "regions"` there is one grid, and each monitor owns a region
-of it. The seam between two regions comes from where the monitors are:
-side by side, a vertical seam (cells left of it belong to the left
-monitor); stacked, a horizontal one. A workspace's monitor is its cell's
-region.
+of it. Monitors are ordered by their physical centres along the axis with
+the greatest spread: side by side yields vertical stripes, stacked yields
+horizontal stripes. Each neighbouring pair has a seam, and a workspace's
+monitor is determined by its cell's region. This also works with three or
+more monitors arranged in a row or column; an L-shaped layout is projected
+onto the axis with the greatest spread.
 
-- A region grows everywhere but across its seam. Numbered workspaces start
-  on the cell next to the seam, and a workspace moved over from the other
+- A region grows everywhere but across its seams. Numbered workspaces start
+  on the cell next to the seam, and a workspace moved over from another
   monitor lands there too (Hyprland resizes it and its windows to the
   monitor it is now on).
-- Crossing happens only from the cell next to the seam: a step across it is
-  the link to the other monitor (none with `links = "none"`). With
+- Crossing happens only from the cell next to a seam: a step across it is
+  the link to the neighbouring monitor (none with `links = "none"`). With
   `land = "active"` it lands on that monitor's current workspace, jumping
   over the ones in between; `"row"` picks the one in the same row.
 - The overview draws the one grid from each monitor's point of view: the
   other monitor's workspaces sit in their cells, fitted at their own shape,
-  with faint outlines for empty cells, a line along the seam, and a frame
+  with faint outlines for empty cells, lines along the seams, and a frame
   over each monitor's current workspace.
-- More than two monitors fall back to a grid each, for now; `monitor.
-  layoutChanged` recomputes the seam.
+- `monitor.layoutChanged` recomputes the regions and seams.
 
 ### step()
 
@@ -345,6 +346,6 @@ whole grid, and it has no links.
 
 ## Open questions
 
-- Seams for three or more monitors (regions handle two).
+- Representing L-shaped layouts as regions instead of stripes.
 - `Kinetics.hpp` opens a private part of hyprutils (`#define private public`);
   a hyprutils change can break it.

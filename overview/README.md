@@ -55,8 +55,8 @@ hl.bind("SUPER + g", hl.plugin.hyprgrid.overview("toggle"))
 | A tap (touchscreen) | Go to the window under it and close. |
 
 Each monitor zoomed out is a screen of the overview, showing its board from
-that monitor's view: with two monitors on one grid, both see the whole grid,
-a seam between the regions, and a frame where each monitor looks. A window
+that monitor's view: with monitors on one grid, each sees the whole grid,
+seams between the regions, and a frame where each monitor looks. A window
 dragged on one can be dropped on the other.
 
 Over a layer (a bar), the pointer goes to it, unless a button is busy with a

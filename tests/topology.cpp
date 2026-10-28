@@ -104,6 +104,18 @@ static void testRegions() {
     CHECK((stripeStart(2, false, 4) == SCell{4, 1}));
     CHECK(stripeSeams(1, true).empty());
     CHECK(stripeOwner({-1, 2}, true, 2) == 0 && stripeOwner({0, 2}, true, 2) == 1);
+
+    // Global ids 1, 2, 3 on different monitors all start at the same row.
+    std::set<std::pair<int, int>> taken;
+    for (size_t monitor = 0; monitor < 3; ++monitor) {
+        const auto cellAt = [&](int along) { return stripeStart(monitor, true, along); };
+        const auto row    = firstFreeAlong([&](int along) { const auto c = cellAt(along); return taken.contains({c.x, c.y}); });
+        const auto cell   = cellAt(row);
+        CHECK((cell == SCell{int(monitor) - 1, 0}));
+        taken.insert({cell.x, cell.y});
+    }
+    CHECK(firstFreeAlong([](int along) { return along < 2; }) == 2);
+    CHECK((stripeStart(1, false, firstFreeAlong([](int along) { return along == 0; })) == SCell{1, 0}));
 }
 
 int main() {

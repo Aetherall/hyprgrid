@@ -159,6 +159,15 @@ namespace Topology {
         return vertical ? SCell{ACROSS, along} : SCell{along, ACROSS};
     }
 
+    // Each monitor fills its own stripe from row/column zero. Workspace ids
+    // are global, so using id - 1 here would stagger fresh monitors diagonally.
+    inline int firstFreeAlong(const std::function<bool(int)>& occupied) {
+        int along = 0;
+        while (occupied(along))
+            ++along;
+        return along;
+    }
+
     inline std::vector<SSeam> stripeSeams(size_t count, bool vertical) {
         std::vector<SSeam> seams;
         for (size_t i = 1; i < count; ++i)

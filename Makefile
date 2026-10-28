@@ -13,7 +13,7 @@ ifeq ($(CXX),g++)
 endif
 
 SOURCES = main.cpp Grid.cpp View.cpp Lua.cpp Gestures.cpp Layout.cpp TopologyConfig.cpp CApi.cpp Setup.cpp $(wildcard overview/*.cpp)
-HEADERS = Grid.hpp View.hpp Lua.hpp Gestures.hpp Layout.hpp TopologyConfig.hpp Topology.hpp Later.hpp Setup.hpp Motion.hpp Gesture.hpp Kinetics.hpp hyprgrid.h $(wildcard overview/*.hpp)
+HEADERS = Grid.hpp View.hpp Lua.hpp Gestures.hpp Layout.hpp TopologyConfig.hpp Topology.hpp Placement.hpp Later.hpp Setup.hpp Motion.hpp Gesture.hpp Kinetics.hpp hyprgrid.h $(wildcard overview/*.hpp)
 # The overview draws with these too.
 PKGS = hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon
 
@@ -29,10 +29,10 @@ all: hyprgrid.so
 hyprgrid.so: $(SOURCES) $(HEADERS) .build/hyprgrid.lua.inc
 	$(CXX) -shared -fPIC $(CXXFLAGS) $(EXTRA_FLAGS) -std=c++26 -Wno-narrowing -I. -I.build $(SOURCES) -o $@ `pkg-config --cflags $(PKGS) '$(LUA_PKG) >= 5.4'`
 
-# Motion.hpp, Gesture.hpp, Topology.hpp, overview/Scene.hpp and
+# Motion.hpp, Gesture.hpp, Topology.hpp, Placement.hpp, overview/Scene.hpp and
 # overview/Interaction.hpp need no Hyprland: their tests build with the
 # compiler alone.
-TESTS = .build/motion-test .build/gesture-test .build/topology-test .build/scene-test .build/interaction-test
+TESTS = .build/motion-test .build/gesture-test .build/topology-test .build/placement-test .build/scene-test .build/interaction-test
 
 test: $(TESTS)
 	for t in $(TESTS); do $$t || exit 1; done
@@ -45,6 +45,10 @@ test: $(TESTS)
 .build/topology-test: tests/topology.cpp Topology.hpp Motion.hpp
 	mkdir -p .build
 	$(CXX) $(CXXFLAGS) -std=c++26 -I. tests/topology.cpp -o $@
+
+.build/placement-test: tests/placement.cpp Placement.hpp Topology.hpp Motion.hpp
+	mkdir -p .build
+	$(CXX) $(CXXFLAGS) -std=c++26 -I. tests/placement.cpp -o $@
 
 .build/scene-test: tests/scene.cpp overview/Scene.hpp Topology.hpp Motion.hpp
 	mkdir -p .build

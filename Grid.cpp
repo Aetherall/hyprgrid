@@ -14,7 +14,7 @@
 // (up/down/left/right) a workspace with windows, on the same board.
 
 #include "Grid.hpp"
-#include "Topology.hpp"
+#include "Placement.hpp"
 
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
@@ -31,7 +31,7 @@
 using Grid::SCell;
 
 namespace {
-    constexpr int64_t STRIP_IDS = 100; // 1-99: column 0; from here: the rest of the grid
+    using Placement::STRIP_IDS;
 
     std::map<int64_t, SCell>           g_cells;    // placements, by workspace id
     std::map<int64_t, std::string>     g_boards;   // ...and the board each is on
@@ -115,19 +115,11 @@ namespace {
         const bool RESERVED = g_reserved.erase(id) && g_cells.contains(id) && g_boards[id] == BOARD && inRegion(ws, g_cells[id]);
         const bool MOVED    = !RESERVED && g_owner[id].lock() == ws && g_cells.contains(id);
         const auto MON      = ws->m_monitor.lock();
-        // With regions, each monitor's first numbered workspace starts at the
-        // same row next to its seam, regardless of its id. Keep later ones
-        // along that seam, rather than drifting sideways when a row is taken.
-        // A workspace moved across regions instead keeps its old row.
-        const auto NUMBERED = id >= 1 && id < STRIP_IDS ? SCell{0, int(id - 1)} : SCell{};
-        auto       wantRow  = NUMBERED.y;
-        if (g_regions && MON && id >= 1 && id < STRIP_IDS && !MOVED && !RESERVED)
-            wantRow = Topology::firstFreeAlong([&](int along) { return placedAt(BOARD, g_regions->nearSeam(MON, along)) != nullptr; });
-        const auto WANT     = RESERVED   ? g_cells[id] :
+        const auto NEAR_SEAM = g_regions && MON ? std::function<SCell(int)>{[&](int along) { return g_regions->nearSeam(MON, along); }} : std::function<SCell(int)>{};
+        const auto WANT      = RESERVED   ? g_cells[id] :
                 MOVED && g_regions && MON ? g_regions->nearSeam(MON, g_regions->along(g_cells[id])) :
                 MOVED                     ? g_cells[id] :
-                g_regions && MON          ? g_regions->nearSeam(MON, wantRow) :
-                                            NUMBERED;
+                                            Placement::initialCell(id, NEAR_SEAM, [&](const SCell& cell) { return placedAt(BOARD, cell) != nullptr; });
         if (!(RESERVED && !placedAt(BOARD, g_cells[id]))) // else: the reserved cell, still free
             g_cells[id] = freeCellNear(BOARD, WANT, ws);
         g_boards[id] = BOARD;

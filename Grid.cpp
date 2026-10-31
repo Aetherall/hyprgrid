@@ -1,9 +1,10 @@
 // Workspace grid (see Grid.hpp).
 //
 // Positions: a workspace is placed when first seen, on its monitor's board
-// -- numbered 1-99 on column 0, row id - 1, if free (else the nearest free
-// cell); ones created by entering a cell get it (ids from 100 up off column
-// 0). A workspace that turns up on another board (moved to a monitor there,
+// -- numbered 1-99 on column 0, row id - 1 without regions, or starting at
+// the first free row next to the seam in its monitor's region; ones created by
+// entering a cell get it (ids from 100 up off column 0). A workspace that
+// turns up on another board (moved to a monitor there,
 // or the topology changed) is placed on it again, near where it was.
 // Placements belong to that workspace (an id reused later is placed afresh),
 // can be moved (moveWorkspace()), and are remembered in
@@ -13,6 +14,7 @@
 // (up/down/left/right) a workspace with windows, on the same board.
 
 #include "Grid.hpp"
+#include "Placement.hpp"
 
 #include <hyprland/src/output/Monitor.hpp>
 #include <hyprland/src/state/WorkspaceState.hpp>
@@ -29,7 +31,7 @@
 using Grid::SCell;
 
 namespace {
-    constexpr int64_t STRIP_IDS = 100; // 1-99: column 0; from here: the rest of the grid
+    using Placement::STRIP_IDS;
 
     std::map<int64_t, SCell>           g_cells;    // placements, by workspace id
     std::map<int64_t, std::string>     g_boards;   // ...and the board each is on
@@ -106,22 +108,18 @@ namespace {
 
     // First sight of a workspace on its board: the cell reserved for its id
     // there if still free (idFor()); a workspace that came from another board,
-    // near its old cell; else numbered 1-99 on column 0, row id - 1; else the
-    // nearest free cell.
+    // near its old cell; else numbered 1-99 on column 0, row id - 1 without
+    // regions, or the first free row next to its region's seam.
     void place(int64_t id, const PHLWORKSPACE& ws) {
         const auto BOARD    = Grid::boardOf(ws);
         const bool RESERVED = g_reserved.erase(id) && g_cells.contains(id) && g_boards[id] == BOARD && inRegion(ws, g_cells[id]);
         const bool MOVED    = !RESERVED && g_owner[id].lock() == ws && g_cells.contains(id);
         const auto MON      = ws->m_monitor.lock();
-        // Numbered ones start on column 0 -- with regions, the region's cell
-        // nearest the seam in that row; one come over from another region
-        // lands right across the seam, in the same row.
-        const auto NUMBERED = id >= 1 && id < STRIP_IDS ? SCell{0, int(id - 1)} : SCell{};
-        const auto WANT     = RESERVED   ? g_cells[id] :
+        const auto NEAR_SEAM = g_regions && MON ? std::function<SCell(int)>{[&](int along) { return g_regions->nearSeam(MON, along); }} : std::function<SCell(int)>{};
+        const auto WANT      = RESERVED   ? g_cells[id] :
                 MOVED && g_regions && MON ? g_regions->nearSeam(MON, g_regions->along(g_cells[id])) :
                 MOVED                     ? g_cells[id] :
-                g_regions && MON          ? g_regions->nearSeam(MON, NUMBERED.y) :
-                                            NUMBERED;
+                                            Placement::initialCell(id, NEAR_SEAM, [&](const SCell& cell) { return placedAt(BOARD, cell) != nullptr; });
         if (!(RESERVED && !placedAt(BOARD, g_cells[id]))) // else: the reserved cell, still free
             g_cells[id] = freeCellNear(BOARD, WANT, ws);
         g_boards[id] = BOARD;

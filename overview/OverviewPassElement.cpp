@@ -18,6 +18,7 @@
 #define protected public
 #include <hyprland/src/render/Renderer.hpp>
 #include <hyprland/src/render/OpenGL.hpp>
+#include <hyprland/src/render/WindowRenderPresentation.hpp>
 #include <hyprland/src/helpers/math/Math.hpp>
 #undef protected
 #undef private
@@ -91,26 +92,26 @@ COverviewShadowPassElement::COverviewShadowPassElement(const SData& data_) : dat
     ;
 }
 
-std::vector<UP<IPassElement>> COverviewShadowPassElement::draw() {
+std::vector<UP<IPassElement>> COverviewShadowPassElement::draw(Render::CRenderContext& ctx) {
     const auto MONITOR = data.monitor.lock();
     const bool HASVISIBLECOLOR = std::ranges::any_of(data.color.m_colors, [](const CHyprColor& color) { return color.a > 0.F; });
     if (!MONITOR || data.fullBox.width < 1 || data.fullBox.height < 1 || data.range <= 0 || !HASVISIBLECOLOR || data.alpha <= 0.F)
         return {};
 
-    CRegion shadowDamage = g_pHyprRenderer->m_renderData.damage.copy().intersect(data.fullBox);
+    CRegion shadowDamage = ctx.m_data.damage.copy().intersect(data.fullBox);
     if (data.ignoreWindow)
         shadowDamage.subtract(roundedRectRegion(data.cutoutBox, data.rounding + 1, data.roundingPower));
 
     if (shadowDamage.empty())
         return {};
 
-    const auto SAVEDDAMAGE       = g_pHyprRenderer->m_renderData.damage;
-    const auto SAVEDCURRENTWINDOW = g_pHyprRenderer->m_renderData.currentWindow;
-    g_pHyprRenderer->m_renderData.damage = shadowDamage;
-    g_pHyprRenderer->m_renderData.currentWindow.reset();
-    auto restoreRenderData = Hyprutils::Utils::CScopeGuard([SAVEDDAMAGE, SAVEDCURRENTWINDOW] {
-        g_pHyprRenderer->m_renderData.damage        = SAVEDDAMAGE;
-        g_pHyprRenderer->m_renderData.currentWindow = SAVEDCURRENTWINDOW;
+    const auto SAVEDDAMAGE       = ctx.m_data.damage;
+    const auto SAVEDCURRENTWINDOW = ctx.m_data.currentWindow;
+    ctx.m_data.damage = shadowDamage;
+    ctx.m_data.currentWindow.reset();
+    auto restoreRenderData = Hyprutils::Utils::CScopeGuard([&ctx, SAVEDDAMAGE, SAVEDCURRENTWINDOW] {
+        ctx.m_data.damage        = SAVEDDAMAGE;
+        ctx.m_data.currentWindow = SAVEDCURRENTWINDOW;
     });
 
     std::optional<int> previousRenderPower;
@@ -126,20 +127,20 @@ std::vector<UP<IPassElement>> COverviewShadowPassElement::draw() {
         Overview::Config::setValue("decoration:shadow:render_power", *previousRenderPower);
     });
 
-    Render::GL::g_pHyprOpenGL->renderRoundedShadow(data.fullBox, data.rounding, data.roundingPower, data.range, data.color, std::clamp(data.alpha, 0.F, 1.F));
+    Render::GL::g_pHyprOpenGL->renderRoundedShadow(ctx, data.fullBox, data.rounding, data.roundingPower, data.range, data.color, std::clamp(data.alpha, 0.F, 1.F), {});
 
     return {};
 }
 
-bool COverviewShadowPassElement::needsLiveBlur() {
+bool COverviewShadowPassElement::needsLiveBlur(Render::CRenderContext&) {
     return false;
 }
 
-bool COverviewShadowPassElement::needsPrecomputeBlur() {
+bool COverviewShadowPassElement::needsPrecomputeBlur(Render::CRenderContext&) {
     return false;
 }
 
-std::optional<CBox> COverviewShadowPassElement::boundingBox() {
+std::optional<CBox> COverviewShadowPassElement::boundingBox(Render::CRenderContext&) {
     const auto MONITOR = data.monitor.lock();
     if (!MONITOR)
         return std::nullopt;
@@ -147,6 +148,6 @@ std::optional<CBox> COverviewShadowPassElement::boundingBox() {
     return data.fullBox.copy().scale(1.F / MONITOR->m_scale).round();
 }
 
-CRegion COverviewShadowPassElement::opaqueRegion() {
+CRegion COverviewShadowPassElement::opaqueRegion(Render::CRenderContext&) {
     return {};
 }

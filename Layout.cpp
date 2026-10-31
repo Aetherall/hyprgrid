@@ -21,6 +21,7 @@
 
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/config/lua/ConfigManager.hpp>
+#include <hyprland/src/config/lua/LuaCaller.hpp>
 #include <hyprland/src/event/EventBus.hpp>
 #include <hyprland/src/managers/eventLoop/EventLoopManager.hpp>
 #include <hyprland/src/output/Monitor.hpp>
@@ -73,13 +74,11 @@ namespace {
         if (g_arrange != LUA_NOREF) {
             if (const auto MGR = Config::Lua::mgr()) {
                 g_arranging = true;
-                MGR->callLuaFn(
-                    g_arrange,
-                    [](lua_State* L) {
-                        pushWorkspaces(L);
-                        return 1;
-                    },
-                    Config::Lua::CConfigManager::LUA_TIMEOUT_EVENT_CALLBACK_MS, "hyprgrid layout");
+                auto& caller = MGR->caller();
+                lua_State* L = caller.state();
+                lua_rawgeti(L, LUA_REGISTRYINDEX, g_arrange);
+                pushWorkspaces(L);
+                (void)caller.callPushed(1, Config::Lua::CLuaCaller::LUA_TIMEOUT_EVENT_CALLBACK_MS, "hyprgrid layout");
                 g_arranging = false;
             }
         }
@@ -155,7 +154,7 @@ void Layout::init(void* handle) {
         throw std::runtime_error("[hyprgrid] failed to register the layout functions");
 
     Grid::onChange(schedule);
-    g_createdListener = Event::bus()->m_events.workspace.created.listen([](PHLWORKSPACEREF) { schedule(); });
+    g_createdListener = Event::bus()->m_events.workspace.createdLate.listen([](PHLWORKSPACEREF) { schedule(); });
     g_removedListener = Event::bus()->m_events.workspace.removed.listen([](PHLWORKSPACEREF) { schedule(); });
     g_reloadListener  = Event::bus()->m_events.config.preReload.listen([] { g_arrange = LUA_NOREF; });
 }

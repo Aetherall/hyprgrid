@@ -275,11 +275,7 @@ namespace Overview {
         if (BIND == BINDS.end())
             return false;
 
-        const auto INDEX = Hyprutils::String::strToNumber<int>((*BIND)->metadata().argument);
-        const auto MGR   = ::Config::Lua::mgr();
-        if (!INDEX || !MGR)
-            return false;
-
+        const auto     SELECTED      = *BIND;
         auto&          state         = *::Config::Actions::state();
         const int      PASSPRESSED   = state.m_passPressed;
         const int      DEPTH         = state.m_bindInvocationDepth;
@@ -295,7 +291,7 @@ namespace Overview {
             state.m_lastCode            = LASTCODE;
             state.m_lastMouseCode       = LASTMOUSECODE;
         });
-        return MGR->callLuaFnBind(*INDEX).success;
+        return SELECTED->invoke().success;
     }
 
     // --- What the buttons do (Interaction::CPointer) ---

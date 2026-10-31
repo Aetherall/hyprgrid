@@ -197,7 +197,7 @@ namespace Overview {
             for (const auto& screen : std::vector{m_screens})
                 screen->onWindowFullscreen(window);
         });
-        m_workspaceCreated = events.workspace.created.listen([dirty](auto) { dirty(); });
+        m_workspaceCreated = events.workspace.createdLate.listen([dirty](auto) { dirty(); });
         m_workspaceRemoved = events.workspace.removed.listen([dirty](auto) { dirty(); });
 
         activateSubmap();

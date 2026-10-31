@@ -26,6 +26,7 @@
 #include <hyprland/src/plugins/PluginAPI.hpp>
 #include <hyprland/src/config/ConfigValue.hpp>
 #include <hyprland/src/config/lua/ConfigManager.hpp>
+#include <hyprland/src/config/lua/LuaCaller.hpp>
 #include <hyprland/src/config/shared/actions/ConfigActions.hpp>
 #include <hyprland/src/devices/IKeyboard.hpp>
 #include <hyprland/src/devices/IPointer.hpp>
@@ -224,20 +225,18 @@ namespace {
     void enter(int onEnter, const PHLMONITOR& monitor, int64_t id, const Motion::SCell& step) {
         if (onEnter >= 0) {
             if (const auto MGR = Config::Lua::mgr()) {
-                MGR->callLuaFn(
-                    onEnter,
-                    [&](lua_State* L) {
-                        lua_newtable(L);
-                        lua_pushstring(L, monitor->m_name.c_str());
-                        lua_setfield(L, -2, "monitor");
-                        lua_pushcfunction(L, luaCancel);
-                        lua_setfield(L, -2, "cancel");
-                        lua_pushinteger(L, id);
-                        lua_pushinteger(L, step.x);
-                        lua_pushinteger(L, step.y);
-                        return 4;
-                    },
-                    Config::Lua::CConfigManager::LUA_TIMEOUT_EVENT_CALLBACK_MS, "hyprgrid on_enter");
+                auto& caller = MGR->caller();
+                lua_State* L = caller.state();
+                lua_rawgeti(L, LUA_REGISTRYINDEX, onEnter);
+                lua_newtable(L);
+                lua_pushstring(L, monitor->m_name.c_str());
+                lua_setfield(L, -2, "monitor");
+                lua_pushcfunction(L, luaCancel);
+                lua_setfield(L, -2, "cancel");
+                lua_pushinteger(L, id);
+                lua_pushinteger(L, step.x);
+                lua_pushinteger(L, step.y);
+                (void)caller.callPushed(4, Config::Lua::CLuaCaller::LUA_TIMEOUT_EVENT_CALLBACK_MS, "hyprgrid on_enter");
             }
             return;
         }

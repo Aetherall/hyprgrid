@@ -30,7 +30,7 @@ namespace {
     CFunctionHook* g_surfaceFrameHook    = nullptr;
     CFunctionHook* g_moveMouseHook       = nullptr;
 
-    typedef void (*origRenderWorkspace)(void*, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
+    typedef void (*origRenderWorkspace)(void*, Render::CRenderContext&, PHLMONITOR, PHLWORKSPACE, const Time::steady_tp&, const CBox&);
     typedef void (*origAddDamageA)(void*, const CBox&);
     typedef void (*origAddDamageB)(void*, const pixman_region32_t*);
     typedef void (*origDamageSurface)(void*, SP<CWLSurfaceResource>, double, double, double);
@@ -117,10 +117,10 @@ namespace {
         rc<origScheduleFrame>(g_scheduleFrameHook->m_original)(thisptr, reason);
     }
 
-    void hkRenderWorkspace(void* thisptr, PHLMONITOR monitor, PHLWORKSPACE workspace, const Time::steady_tp& now, const CBox& geometry) {
+    void hkRenderWorkspace(void* thisptr, Render::CRenderContext& ctx, PHLMONITOR monitor, PHLWORKSPACE workspace, const Time::steady_tp& now, const CBox& geometry) {
         const auto SCREEN = screenFor(monitor);
         if (!SCREEN || g_rendering) {
-            rc<origRenderWorkspace>(g_renderWorkspaceHook->m_original)(thisptr, monitor, workspace, now, geometry);
+            rc<origRenderWorkspace>(g_renderWorkspaceHook->m_original)(thisptr, ctx, monitor, workspace, now, geometry);
             return;
         }
         const auto               PREVMONITOR = g_renderingMonitor;
@@ -411,7 +411,9 @@ namespace Overview::Hooks {
 void Overview::init(HANDLE handle) {
     OVERVIEW_HANDLE = handle;
 
-    g_renderWorkspaceHook = HyprlandAPI::createFunctionHook(handle, findFnOrThrow("renderWorkspace", {"CHyprRenderer::renderWorkspace(", "IHyprRenderer::renderWorkspace("}),
+    // Hyprland 0.57 also has a renderWorkspace(ctx, workspace, now, mode)
+    // overload; only the monitor-specific one can be replaced by a screen.
+    g_renderWorkspaceHook = HyprlandAPI::createFunctionHook(handle, findFnOrThrow("renderWorkspace", {"IHyprRenderer::renderWorkspace(Render::CRenderContext&, Hyprutils::Memory::CSharedPointer<Monitor::CMonitor>"}),
                                                             rc<void*>(hkRenderWorkspace));
     g_scheduleFrameHook   = HyprlandAPI::createFunctionHook(handle, findFnOrThrow("_ZN7Monitor8CMonitor13scheduleFrameEN10Aquamarine7IOutput19scheduleFrameReasonE", {""}),
                                                             rc<void*>(hkScheduleFrame));

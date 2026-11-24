@@ -138,6 +138,8 @@ hl.plugin.hyprgrid.setup({
         -- and the overview's own options (scale, wallpaper, blur, ...):
         -- see overview/README.md
     },
+    span = { fade = 150 }, -- a floating window's part on another monitor fades out
+                         -- over 150 ms while its own screen's view moves; false: it slides
     max_aspect = 3,      -- a moved window is never squashed past 3:1
     hooks = {},          -- see "Replace one piece with a hook"
 })

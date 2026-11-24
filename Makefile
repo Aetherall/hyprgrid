@@ -12,8 +12,8 @@ ifeq ($(CXX),g++)
     EXTRA_FLAGS += -fno-gnu-unique
 endif
 
-SOURCES = main.cpp Grid.cpp View.cpp Lua.cpp Gestures.cpp Layout.cpp TopologyConfig.cpp CApi.cpp Setup.cpp $(wildcard overview/*.cpp)
-HEADERS = Grid.hpp View.hpp Lua.hpp Gestures.hpp Layout.hpp TopologyConfig.hpp Topology.hpp Placement.hpp Later.hpp Setup.hpp Motion.hpp Gesture.hpp Kinetics.hpp hyprgrid.h $(wildcard overview/*.hpp)
+SOURCES = main.cpp Grid.cpp View.cpp Lua.cpp Gestures.cpp Layout.cpp TopologyConfig.cpp CApi.cpp Setup.cpp Span.cpp $(wildcard overview/*.cpp)
+HEADERS = Grid.hpp View.hpp Lua.hpp Gestures.hpp Layout.hpp TopologyConfig.hpp Topology.hpp Placement.hpp Later.hpp Setup.hpp Span.hpp Motion.hpp Gesture.hpp Kinetics.hpp hyprgrid.h $(wildcard overview/*.hpp)
 # The overview draws with these too.
 PKGS = hyprland pixman-1 libdrm pangocairo libinput libudev wayland-server xkbcommon
 

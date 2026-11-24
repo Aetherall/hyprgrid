@@ -71,8 +71,8 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         Lua::init(PHANDLE);
         Gestures::init(PHANDLE);
         Layout::init(PHANDLE);
+        Span::init(PHANDLE); // before the overview reloads the config
         Overview::init(PHANDLE);
-        Span::init(PHANDLE);
     } catch (...) {
         Later::cancelAll();
         Span::exit();

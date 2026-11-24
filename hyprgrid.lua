@@ -82,6 +82,10 @@ local DEFAULTS = {
 		-- lifting them all then zooms back in there. false: none.
 		touchpad = { fingers = 4, distance = 300 },
 	},
+	-- A floating window lying partly on another monitor: that part fades out
+	-- over `fade` ms while its own monitor's view moves, and back in once it
+	-- settles. false: Hyprland draws it, sliding with the view.
+	span = { fade = 150 },
 	hooks = {},
 }
 
@@ -883,6 +887,7 @@ function M.setup(options)
 	if opts.layout then
 		register_layout()
 	end
+	hl.config({ plugin = { hyprgrid = { span = { enabled = opts.span ~= false, fade = opts.span and opts.span.fade or nil } } } })
 	if opts.keys then
 		-- Where a move leaves the workspace is step()'s to say (the topology),
 		-- for focus and moved windows alike: Hyprland's own fallback would

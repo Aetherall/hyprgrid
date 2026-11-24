@@ -11,6 +11,7 @@
 #include "TopologyConfig.hpp"
 #include "Lua.hpp"
 #include "Setup.hpp"
+#include "Span.hpp"
 #include "View.hpp"
 #include "hyprgrid.h"
 #include "overview/Overview.hpp"
@@ -71,8 +72,10 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
         Gestures::init(PHANDLE);
         Layout::init(PHANDLE);
         Overview::init(PHANDLE);
+        Span::init(PHANDLE);
     } catch (...) {
         Later::cancelAll();
+        Span::exit();
         Overview::exit();
         Layout::exit();
         Gestures::exit();
@@ -88,6 +91,7 @@ APICALL EXPORT PLUGIN_DESCRIPTION_INFO PLUGIN_INIT(HANDLE handle) {
 APICALL EXPORT void PLUGIN_EXIT() {
     // Hyprland drops a plugin's Lua functions when it unloads.
     Later::cancelAll();
+    Span::exit();
     Overview::exit();
     Layout::exit();
     Gestures::exit();

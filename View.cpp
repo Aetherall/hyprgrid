@@ -14,6 +14,7 @@
 #include "Kinetics.hpp" // first: see its header
 #include "View.hpp"
 #include "Grid.hpp"
+#include "Span.hpp"
 #include "overview/Overview.hpp"
 
 #include <hyprland/src/config/ConfigValue.hpp>
@@ -129,6 +130,7 @@ namespace {
         const auto V = viewOf(mon);
         if (!V)
             return;
+        Span::viewChanged(mon);
         if (Overview::drawing(mon)) {
             Overview::sync(mon);
             return;

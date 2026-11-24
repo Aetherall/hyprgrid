@@ -48,7 +48,8 @@ namespace {
     };
 
     struct SView {
-        PHLANIMVAR<float> x, y; // created on the first glide or zoom
+        PHLMONITORREF     monitor; // the monitor its callbacks apply to
+        PHLANIMVAR<float> x, y;    // created on the first glide or zoom
         PHLANIMVAR<float> zoom;
         SHold             hold;
         SZoomHold         zoomHold;
@@ -71,9 +72,25 @@ namespace {
         return mon->m_size + Vector2D{double(*PGAP), double(*PGAP)};
     }
 
+    // A monitor that reconnects is a new one under the same id: the view
+    // made for the old one (its callbacks bound to it) is dropped.
     SView* viewOf(const PHLMONITOR& mon) {
         const auto IT = mon ? g_views.find(mon->m_id) : g_views.end();
-        return IT == g_views.end() ? nullptr : &IT->second;
+        if (IT == g_views.end())
+            return nullptr;
+        if (IT->second.monitor.lock() != mon) {
+            g_views.erase(IT);
+            return nullptr;
+        }
+        return &IT->second;
+    }
+
+    SView& viewFor(const PHLMONITOR& mon) {
+        if (const auto V = viewOf(mon))
+            return *V;
+        auto& view   = g_views[mon->m_id];
+        view.monitor = mon;
+        return view;
     }
 
     bool holding(const PHLMONITOR& mon) {
@@ -151,7 +168,7 @@ namespace {
     // The monitor's view, with its animated values (the position starting on
     // the active cell).
     SView& animated(const PHLMONITOR& mon) {
-        auto& view = g_views[mon->m_id];
+        auto& view = viewFor(mon);
         if (!view.x) {
             const auto CB = [mon = PHLMONITORREF{mon}](auto) {
                 if (const auto M = mon.lock())
@@ -251,7 +268,7 @@ namespace {
     }
 
     void startHold(const PHLMONITOR& mon, const SPoint& pos, const SCell& anchor) {
-        auto& hold  = g_views[mon->m_id].hold;
+        auto& hold  = viewFor(mon).hold;
         hold.active = true; // first: freezing the glide below must not re-place it
         hold.pos    = pos;
         hold.anchor = anchor;

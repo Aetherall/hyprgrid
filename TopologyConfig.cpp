@@ -1,5 +1,5 @@
 // The topology (see TopologyConfig.hpp). Registers:
-//   hl.plugin.hyprgrid.topology({ boards, links, land, grow })
+//   hl.plugin.hyprgrid.topology({ boards, links, land, grow, extend })
 //       boards: "regions" (one grid, a region per monitor split by seams
 //               from their layout, the default), "monitor" (a grid each),
 //               "shared" (one grid, no seams), or groups
@@ -11,6 +11,11 @@
 //       land:   "active" (the linked monitor's current workspace, the
 //               default) or "row" (its workspace in the same row / column,
 //               nearest the edge entered by)
+//       extend: the sides each monitor's grid grows toward:
+//               { monitor = { "left", "down" }, ... } (a monitor in none:
+//               all four), or a function(monitor, side) -> false to stop
+//               that side, asked once per monitor; past its workspaces'
+//               extent toward any other side, no empty cell is entered
 //       grow:   "open_edges" (empty cells can be entered except toward a
 //               link, the default), "always" (empty cells first), "never"
 //   hl.plugin.hyprgrid.step(dx, dy) -> { kind, id, monitor, dx, dy }
@@ -65,6 +70,11 @@ namespace {
         ACTIVE,
         ROW,
     };
+    enum class eExtend : uint8_t {
+        ALL,
+        TABLE,
+        FUNCTION,
+    };
 
     struct SLink {
         std::string from;
@@ -80,9 +90,15 @@ namespace {
         int                                fn   = LUA_NOREF;
         eLand                              land = eLand::ACTIVE;
         eGrow                              grow = eGrow::OPEN_EDGES;
+        eExtend                            extend = eExtend::ALL;
+        std::map<std::string, Topology::SSides> extendTable; // monitor -> its sides, for TABLE
+        int                                extendFn = LUA_NOREF;
     };
 
     SConfig             g_config;
+    // `extend`'s answer per monitor, asked once (a function is Lua): cleared
+    // when the topology or the monitors change.
+    std::map<std::string, Topology::SSides> g_sidesOf;
     bool                g_setThisReload = false;
     CHyprSignalListener g_preReloadListener, g_reloadedListener, g_monitorListener;
 
@@ -231,6 +247,55 @@ namespace {
         }
     }
 
+    // The sides `mon`'s part of the grid grows toward.
+    Topology::SSides sidesOf(const PHLMONITOR& mon) {
+        if (g_config.extend == eExtend::ALL)
+            return {};
+        if (const auto IT = g_sidesOf.find(mon->m_name); IT != g_sidesOf.end())
+            return IT->second;
+        Topology::SSides sides;
+        if (g_config.extend == eExtend::TABLE) {
+            if (const auto IT = g_config.extendTable.find(mon->m_name); IT != g_config.extendTable.end())
+                sides = IT->second;
+        } else {
+            const auto MGR  = Config::Lua::mgr();
+            const auto LIFE = MGR ? MGR->luaStateLifetime() : nullptr;
+            lua_State* L    = LIFE ? LIFE->state : nullptr;
+            if (!L || g_config.extendFn == LUA_NOREF)
+                return sides;
+            for (const auto S : {eSide::LEFT, eSide::RIGHT, eSide::UP, eSide::DOWN}) {
+                lua_rawgeti(L, LUA_REGISTRYINDEX, g_config.extendFn);
+                lua_pushstring(L, mon->m_name.c_str());
+                lua_pushstring(L, nameOf(S));
+                // Only `false` stops a side; nil, or an error, leaves it growing.
+                const bool GROWS = lua_pcall(L, 2, 1, 0) != LUA_OK || !lua_isboolean(L, -1) || lua_toboolean(L, -1);
+                lua_pop(L, 1); // the result, or the error
+                switch (S) {
+                    case eSide::LEFT: sides.left = GROWS; break;
+                    case eSide::RIGHT: sides.right = GROWS; break;
+                    case eSide::UP: sides.up = GROWS; break;
+                    default: sides.down = GROWS; break;
+                }
+            }
+        }
+        g_sidesOf[mon->m_name] = sides;
+        return sides;
+    }
+
+    // Whether `mon` may grow onto the empty `cell`: within its workspaces'
+    // extent toward each side `extend` doesn't let it grow.
+    bool mayGrow(const PHLMONITOR& mon, const Motion::SCell& cell) {
+        if (!mon || g_config.extend == eExtend::ALL)
+            return true;
+        const auto                 BOARD = Grid::boardOf(mon);
+        std::vector<Motion::SCell> cells;
+        for (const auto& p : Grid::all()) {
+            if (p.board == BOARD && p.workspace->m_monitor.lock() == mon)
+                cells.push_back(p.cell);
+        }
+        return Topology::withinSides(cells, cell, sidesOf(mon));
+    }
+
     // The workspace to land on across a link from `from` (at `cell`, stepping
     // to `side`) onto `to`.
     PHLWORKSPACE landing(const PHLMONITOR& to, const std::optional<Motion::SCell>& cell, eSide side) {
@@ -341,6 +406,55 @@ namespace {
         return err;
     }
 
+    std::string parseExtend(lua_State* L, SConfig& c) {
+        lua_getfield(L, 1, "extend");
+        const std::string EXPECTED = "extend: expected { monitor = { \"left\", \"down\", ... }, ... } or a function";
+        std::string       err;
+        if (lua_isfunction(L, -1)) {
+            c.extend = eExtend::FUNCTION;
+            lua_pushvalue(L, -1);
+            c.extendFn = luaL_ref(L, LUA_REGISTRYINDEX);
+        } else if (lua_istable(L, -1)) {
+            c.extend = eExtend::TABLE;
+            lua_pushnil(L);
+            while (err.empty() && lua_next(L, -2)) {
+                const std::string MON = lua_type(L, -2) == LUA_TSTRING ? lua_tostring(L, -2) : "";
+                if (MON.empty() || !lua_istable(L, -1))
+                    err = EXPECTED;
+                else {
+                    // Listed sides grow, the others don't.
+                    Topology::SSides sides{false, false, false, false};
+                    for (int i = 1; err.empty(); ++i) {
+                        lua_rawgeti(L, -1, i);
+                        if (lua_isnil(L, -1)) {
+                            lua_pop(L, 1);
+                            break;
+                        }
+                        const auto SIDE = lua_isstring(L, -1) ? sideNamed(lua_tostring(L, -1)) : std::nullopt;
+                        if (!SIDE)
+                            err = "extend." + MON + ": expected sides \"left\", \"right\", \"up\" or \"down\"";
+                        else if (*SIDE == eSide::LEFT)
+                            sides.left = true;
+                        else if (*SIDE == eSide::RIGHT)
+                            sides.right = true;
+                        else if (*SIDE == eSide::UP)
+                            sides.up = true;
+                        else
+                            sides.down = true;
+                        lua_pop(L, 1);
+                    }
+                    c.extendTable[MON] = sides;
+                }
+                lua_pop(L, 1);
+            }
+            if (!err.empty())
+                lua_pop(L, 1); // the key lua_next left
+        } else if (!lua_isnil(L, -1))
+            err = EXPECTED;
+        lua_pop(L, 1);
+        return err;
+    }
+
     std::string parseTopology(lua_State* L, SConfig& c) {
         if (!lua_istable(L, 1))
             return "expected a table";
@@ -377,12 +491,23 @@ namespace {
                 err = "grow: expected \"open_edges\", \"always\" or \"never\"";
             lua_pop(L, 1);
         }
+        if (err.empty())
+            err = parseExtend(L, c);
         return err;
     }
 
     void apply() {
+        g_sidesOf.clear();
+        Grid::setGrowth(mayGrow);
         Grid::setBoards(TopologyConfig::boardOf); // workspaces may be on other boards now
         installRegions();
+    }
+
+    void unrefFunctions(lua_State* L, const SConfig& c) {
+        if (c.fn != LUA_NOREF)
+            luaL_unref(L, LUA_REGISTRYINDEX, c.fn);
+        if (c.extendFn != LUA_NOREF)
+            luaL_unref(L, LUA_REGISTRYINDEX, c.extendFn);
     }
 
     int luaTopology(lua_State* L) {
@@ -390,15 +515,13 @@ namespace {
             SConfig    config;
             const auto ERR = parseTopology(L, config);
             if (ERR.empty()) {
-                if (g_config.fn != LUA_NOREF)
-                    luaL_unref(L, LUA_REGISTRYINDEX, g_config.fn);
+                unrefFunctions(L, g_config);
                 g_config        = std::move(config);
                 g_setThisReload = true;
                 apply();
                 return 0;
             }
-            if (config.fn != LUA_NOREF)
-                luaL_unref(L, LUA_REGISTRYINDEX, config.fn);
+            unrefFunctions(L, config);
             lua_pushstring(L, ("hyprgrid.topology: " + ERR).c_str());
         }
         // Raised with no C++ object alive: lua_error() longjmps.
@@ -500,12 +623,20 @@ void TopologyConfig::init(void* handle) {
         throw std::runtime_error("[hyprgrid] failed to register topology()");
     apply();
     // Monitors come and go, or move: the regions follow.
-    g_monitorListener = Event::bus()->m_events.monitor.layoutChanged.listen([] { installRegions(); });
+    g_monitorListener = Event::bus()->m_events.monitor.layoutChanged.listen([] {
+        g_sidesOf.clear(); // a function may answer differently for the new ones
+        installRegions();
+    });
     g_preReloadListener = Event::bus()->m_events.config.preReload.listen([] {
         g_setThisReload = false;
         if (g_config.links == eLinks::FUNCTION) { // its reference dies with the Lua state
             g_config.links = eLinks::NONE;
             g_config.fn    = LUA_NOREF;
+        }
+        if (g_config.extend == eExtend::FUNCTION) { // likewise
+            g_config.extend   = eExtend::ALL;
+            g_config.extendFn = LUA_NOREF;
+            g_sidesOf.clear();
         }
     });
     g_reloadedListener = Event::bus()->m_events.config.reloaded.listen([] {
@@ -522,5 +653,7 @@ void TopologyConfig::exit() {
     g_monitorListener.reset();
     Grid::setRegions(std::nullopt);
     Grid::setBoards(nullptr);
+    Grid::setGrowth(nullptr);
     g_config = {};
+    g_sidesOf.clear();
 }

@@ -60,6 +60,23 @@ static void testSides() {
     CHECK(opposite(eSide::LEFT) == eSide::RIGHT && opposite(eSide::UP) == eSide::DOWN);
 }
 
+static void testExtend() {
+    const std::vector<SCell> CELLS = {{0, 0}, {-1, 0}, {0, 2}};
+    // Growing left and down only: those edges are open, right and up are
+    // walls at the workspaces' extent.
+    const SSides LEFT_DOWN = {.left = true, .right = false, .up = false, .down = true};
+    CHECK(withinSides(CELLS, {-2, 0}, LEFT_DOWN));
+    CHECK(withinSides(CELLS, {0, 3}, LEFT_DOWN));
+    CHECK(!withinSides(CELLS, {1, 0}, LEFT_DOWN));
+    CHECK(!withinSides(CELLS, {0, -1}, LEFT_DOWN));
+    // Inside the extent, a gap can still be filled whatever the sides.
+    CHECK(withinSides(CELLS, {-1, 1}, SSides{false, false, false, false}));
+    // All sides (the default), or no workspaces yet: anywhere.
+    CHECK(withinSides(CELLS, {5, -5}, SSides{}));
+    CHECK(withinSides({}, {5, -5}, SSides{false, false, false, false}));
+    CHECK(LEFT_DOWN.grows(eSide::LEFT) && !LEFT_DOWN.grows(eSide::RIGHT) && !LEFT_DOWN.grows(eSide::UP) && LEFT_DOWN.grows(eSide::DOWN));
+}
+
 static void testLandingInLine() {
     const std::vector<SCell> BOARD = {{0, 0}, {1, 0}, {2, 0}, {0, 1}, {3, 1}};
     // Entered by its right edge (coming from a monitor on the right): the rightmost in the row.
@@ -109,6 +126,7 @@ static void testRegions() {
 int main() {
     testOrder();
     testSides();
+    testExtend();
     testLandingInLine();
     testRegions();
     if (g_failures)

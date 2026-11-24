@@ -40,6 +40,7 @@ namespace {
     std::function<void()>              g_onChange;
     std::function<std::string(const PHLMONITOR&)> g_boardOf;
     std::optional<Grid::SRegions>                 g_regions;
+    std::function<bool(const PHLMONITOR&, const SCell&)> g_mayGrow;
 
     // With regions, a cell is fine for a workspace only in its monitor's.
     bool inRegion(const PHLWORKSPACE& ws, const SCell& cell) {
@@ -192,6 +193,10 @@ PHLMONITOR Grid::regionOwner(const SCell& cell) {
     return g_regions ? g_regions->owner(cell) : nullptr;
 }
 
+void Grid::setGrowth(std::function<bool(const PHLMONITOR&, const SCell&)> mayGrow) {
+    g_mayGrow = std::move(mayGrow);
+}
+
 void Grid::setBoards(std::function<std::string(const PHLMONITOR&)> boardOf) {
     g_boardOf = std::move(boardOf);
     changed(); // workspaces may be on other boards now
@@ -244,6 +249,8 @@ bool Grid::enterable(const PHLMONITOR& from, const SCell& cell) {
     const auto board = boardOf(from);
     if (workspaceAt(board, cell))
         return true;
+    if (g_mayGrow && !g_mayGrow(from, cell))
+        return false;
     for (const auto& n : {SCell{cell.x - 1, cell.y}, SCell{cell.x + 1, cell.y}, SCell{cell.x, cell.y - 1}, SCell{cell.x, cell.y + 1}}) {
         const auto WS = workspaceAt(board, n);
         if (WS && WS->getWindowCount() > 0)

@@ -41,6 +41,37 @@ namespace Topology {
         return std::nullopt;
     }
 
+    // The sides a monitor's part of the grid grows toward (topology()'s
+    // `extend`): all of them by default.
+    struct SSides {
+        bool left = true, right = true, up = true, down = true;
+
+        bool grows(eSide side) const {
+            switch (side) {
+                case eSide::LEFT: return left;
+                case eSide::RIGHT: return right;
+                case eSide::UP: return up;
+                default: return down;
+            }
+        }
+    };
+
+    // Whether an empty cell is in reach of `sides`: never past the extent of
+    // `cells` (the monitor's workspaces) toward a side that doesn't grow. With
+    // no cells, anywhere.
+    inline bool withinSides(const std::vector<SCell>& cells, const SCell& cell, const SSides& sides) {
+        if (cells.empty())
+            return true;
+        int minX = cells[0].x, maxX = minX, minY = cells[0].y, maxY = minY;
+        for (const auto& c : cells) {
+            minX = std::min(minX, c.x);
+            maxX = std::max(maxX, c.x);
+            minY = std::min(minY, c.y);
+            maxY = std::max(maxY, c.y);
+        }
+        return (sides.left || cell.x >= minX) && (sides.right || cell.x <= maxX) && (sides.up || cell.y >= minY) && (sides.down || cell.y <= maxY);
+    }
+
     inline eSide opposite(eSide side) {
         switch (side) {
             case eSide::LEFT: return eSide::RIGHT;

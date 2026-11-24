@@ -309,6 +309,7 @@ hl.plugin.hyprgrid.topology({
     links  = "physical",   -- "none": no crossing; a list of links; or function(monitor, side) -> monitor
     land   = "active",     -- "row": the workspace in the same row on the other monitor
     grow   = "open_edges", -- "always": grow toward a link before crossing it; "never"
+    extend = nil,          -- all sides; or { ["DP-1"] = { "left", "down" } }: the sides each monitor's grid grows toward
 })
 ```
 

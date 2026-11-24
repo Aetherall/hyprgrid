@@ -48,9 +48,14 @@ namespace Grid {
     // The monitor whose region a cell is in (none: no regions).
     PHLMONITOR regionOwner(const SCell& cell);
 
+    // Whether `from` may grow onto an empty cell at all (TopologyConfig's
+    // `extend`); anywhere until set.
+    void setGrowth(std::function<bool(const PHLMONITOR&, const SCell&)> mayGrow);
+
     // A cell a view on `from` may go to: holding a workspace, or empty and
     // next to (up/down/left/right) a workspace with windows, on its board and,
-    // with regions, in its region: a board only grows around what's in use.
+    // with regions, in its region: a board only grows around what's in use,
+    // and only toward the sides `setGrowth()` allows.
     bool enterable(const PHLMONITOR& from, const SCell& cell);
 
     // The workspace id for a board's cell: the one there, or a fresh one

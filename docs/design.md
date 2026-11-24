@@ -257,6 +257,7 @@ hl.plugin.hyprgrid.topology({
     links  = "physical",   -- an edge facing another monitor leads to it (default); "none"
     land   = "active",     -- crossing lands on that monitor's current workspace (default); "row"
     grow   = "open_edges", -- empty cells can be entered except toward a link (default); "always", "never"
+    extend = nil,          -- every monitor grows toward all sides (default); or per monitor, below
 })
 ```
 
@@ -268,6 +269,12 @@ Explicit forms, for other setups:
   made by hand (one-way unless listed both ways).
 - `links = function(monitor, side) return "DP-2" end`: anything else; called
   on a move at a board's edge only, never per frame.
+- `extend = { ["DP-1"] = { "left", "down" } }`: the sides each monitor's
+  grid grows toward (a monitor not listed: all four). Toward any other side,
+  no empty cell past the extent of that monitor's workspaces can be entered;
+  gaps inside it still can. `extend = function(monitor, side) ... end`
+  returns `false` to stop a side; it is asked once per monitor, again when
+  the monitors or the topology change.
 
 `topology()` is called at config time and reset to the defaults on a
 config reload, like rules.
